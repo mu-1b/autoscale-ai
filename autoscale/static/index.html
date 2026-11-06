@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoScale AI · Live Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --border: #2e2e2b;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #8a897f;
+    --s1: #3987e5; --s2: #d95926;
+    --good: #0ca30c; --warn: #fab219; --crit: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; border: 1px solid var(--border); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--good); } .dot.bad { background: var(--crit); } .dot.warn { background: var(--warn); }
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+  .seg button { background: none; border: 0; color: var(--ink-2); padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }
+  .seg button.active { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--border); }
+  .btn { background: var(--s1); color: #fff; border: 0; padding: 8px 14px; border-radius: 8px; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  main { padding: 22px 28px 40px; max-width: 1400px; margin: 0 auto; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile .label { color: var(--ink-2); font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .tile .value { font-size: 30px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .value small { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+  .tile .sub { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .badge { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--warn); border: 1px solid #5a4a1c; padding: 1px 6px; border-radius: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .card h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .card h2 .hint { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .chart { position: relative; height: 210px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); }
+  .legend i { display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+  .lower { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid #242422; color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .events { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow-y: auto; }
+  .events li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid #242422; align-items: start; }
+  .events .arrow { font-weight: 700; text-align: center; }
+  .events .up { color: var(--s2); } .events .down { color: var(--s1); }
+  .events .what { color: var(--ink); } .events .why { color: var(--muted); font-size: 12px; }
+  .events time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 18px 0; text-align: center; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  @media (max-width: 900px) { .grid, .lower { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>AutoScale AI <span>· Distributed Load-Aware API System</span></h1>
+  <div class="controls">
+    <span class="pill"><span id="health-dot" class="dot"></span><span id="health-text">connecting…</span></span>
+    <div class="seg" id="strategy">
+      <button data-s="round_robin">Round robin</button>
+      <button data-s="least_connections">Least connections</button>
+    </div>
+    <button class="btn" id="spike">Trigger demo spike</button>
+  </div>
+</header>
+
+<main>
+  <section class="tiles">
+    <div class="tile"><div class="label">Requests / sec</div><div class="value" id="t-rps">–</div><div class="sub" id="t-rps-sub">&nbsp;</div></div>
+    <div class="tile"><div class="label">Avg task latency</div><div class="value" id="t-lat">–</div><div class="sub" id="t-lat-sub">&nbsp;</div></div>
+    <div class="tile"><div class="label">Queue depth</div><div class="value" id="t-queue">–</div><div class="sub" id="t-queue-sub">&nbsp;</div></div>
+    <div class="tile"><div class="label">Active workers <span class="badge">simulated</span></div><div class="value" id="t-workers">–</div><div class="sub" id="t-workers-sub">&nbsp;</div></div>
+    <div class="tile"><div class="label">Scaling events <span class="badge">simulated</span></div><div class="value" id="t-events">–</div><div class="sub" id="t-events-sub">&nbsp;</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>Requests per second <span class="hint">gateway, 5s window</span></h2><div class="chart"><canvas id="c-rps"></canvas></div></div>
+    <div class="card"><h2>Average latency (ms)
+      <span class="legend"><span><i style="background:var(--s1)"></i>Task end-to-end</span><span><i style="background:var(--s2)"></i>API response</span></span></h2>
+      <div class="chart"><canvas id="c-lat"></canvas></div></div>
+    <div class="card"><h2>Queue depth <span class="hint">pending tasks in Redis</span></h2><div class="chart"><canvas id="c-queue"></canvas></div></div>
+    <div class="card"><h2>Workers
+      <span class="legend"><span><i style="background:var(--s1)"></i>Simulated capacity</span><span><i style="background:var(--s2)"></i>Real instances</span></span></h2>
+      <div class="chart"><canvas id="c-workers"></canvas></div></div>
+  </section>
+
+  <section class="lower">
+    <div class="card">
+      <h2>Worker instances <span class="hint">real containers, live heartbeat</span></h2>
+      <table>
+        <thead><tr><th>Worker</th><th>Consumer slots</th><th>Active</th><th>Processed</th><th>Proxied (gateway)</th></tr></thead>
+        <tbody id="workers"><tr><td colspan="5" class="empty">No workers registered</td></tr></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Scaling events <span class="badge">simulated</span></h2>
+      <ul class="events" id="events"><li class="empty">No scaling events yet — trigger a spike.</li></ul>
+    </div>
+  </section>
+
+  <footer>Traffic, latency and queue metrics are measured live from the gateway and workers. Worker count and scaling events come from the autoscaling simulation; the demo spike generates synthetic traffic.</footer>
+</main>
+
+<script>
+const POINTS = 90;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C = { s1: css('--s1'), s2: css('--s2'), grid: '#262624', ink2: css('--ink-2'), muted: css('--muted') };
+Chart.defaults.color = C.muted;
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.font.size = 11;
+
+const labels = [];
+function makeChart(id, series, { fill = false, stepped = false } = {}) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels, datasets: series.map(s => ({
+      label: s.label, data: [], borderColor: s.color, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+      pointHoverBorderColor: css('--surface'), pointHoverBorderWidth: 2, pointHoverBackgroundColor: s.color,
+      tension: stepped ? 0 : 0.3, stepped, fill: fill ? 'origin' : false, backgroundColor: s.color + '26',
+    })) },
+    options: {
+      animation: false, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0d0d0d', borderColor: '#2e2e2b', borderWidth: 1, titleColor: C.ink2, bodyColor: '#f0efec', padding: 10, boxPadding: 4 } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 6, maxRotation: 0 }, border: { color: C.grid } },
+        y: { beginAtZero: true, grid: { color: C.grid }, border: { display: false }, ticks: { maxTicksLimit: 5, precision: 0 } },
+      },
+    },
+  });
+}
+
+const charts = {
+  rps: makeChart('c-rps', [{ label: 'Requests/sec', color: C.s1 }], { fill: true }),
+  lat: makeChart('c-lat', [{ label: 'Task end-to-end', color: C.s1 }, { label: 'API response', color: C.s2 }]),
+  queue: makeChart('c-queue', [{ label: 'Queue depth', color: C.s1 }], { fill: true }),
+  workers: makeChart('c-workers', [{ label: 'Simulated capacity', color: C.s1 }, { label: 'Real instances', color: C.s2 }], { stepped: true }),
+};
+
+const $ = id => document.getElementById(id);
+const fmtMs = ms => ms >= 1000 ? `${(ms / 1000).toFixed(2)}<small>s</small>` : `${Math.round(ms)}<small>ms</small>`;
+const clock = ts => new Date(ts * 1000).toLocaleTimeString([], { hour12: false });
+
+function push(m) {
+  labels.push(clock(m.timestamp));
+  const vals = {
+    rps: [m.requests_per_sec], lat: [m.task_latency_ms, m.api_latency_ms],
+    queue: [m.queue_depth], workers: [m.simulated_workers, m.worker_instances],
+  };
+  for (const [k, v] of Object.entries(vals)) charts[k].data.datasets.forEach((d, i) => d.data.push(v[i]));
+  if (labels.length > POINTS) {
+    labels.shift();
+    Object.values(charts).forEach(c => c.data.datasets.forEach(d => d.data.shift()));
+  }
+  Object.values(charts).forEach(c => c.update('none'));
+}
+
+let peakQueue = 0;
+function tiles(m) {
+  $('t-rps').innerHTML = m.requests_per_sec.toFixed(1);
+  $('t-rps-sub').textContent = `${m.task_throughput.toFixed(1)} tasks/s done · ${m.rate_limited_per_sec.toFixed(1)}/s limited`;
+  $('t-lat').innerHTML = fmtMs(m.task_latency_ms);
+  $('t-lat-sub').textContent = `API ${Math.round(m.api_latency_ms)}ms · errors ${m.errors_per_sec.toFixed(1)}/s`;
+  peakQueue = Math.max(peakQueue, m.queue_depth);
+  $('t-queue').textContent = m.queue_depth;
+  $('t-queue-sub').textContent = `peak ${peakQueue} this session`;
+  $('t-workers').textContent = m.simulated_workers;
+  $('t-workers-sub').textContent = `${m.worker_instances} real instance${m.worker_instances === 1 ? '' : 's'}`;
+  document.querySelectorAll('#strategy button').forEach(b => b.classList.toggle('active', b.dataset.s === m.strategy));
+  $('spike').disabled = m.demo_spike_running;
+  $('spike').textContent = m.demo_spike_running ? 'Spike running…' : 'Trigger demo spike';
+}
+
+function renderWorkers(list) {
+  $('workers').innerHTML = list.length ? list.map(w => `<tr><td>${w.id}</td><td>${w.slots}</td><td>${w.active}</td><td>${w.processed}</td><td>${w.gateway_served}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">No workers registered</td></tr>';
+}
+
+function renderEvents(list) {
+  $('t-events').textContent = list.length;
+  const last = list[0];
+  $('t-events-sub').textContent = last ? `last: ${last.from} → ${last.to} at ${clock(last.timestamp)}` : 'none yet';
+  if (!list.length) return;
+  $('events').innerHTML = list.map(e => `<li>
+      <span class="arrow ${e.direction}">${e.direction === 'up' ? '▲' : '▼'}</span>
+      <div><div class="what">Scaled ${e.direction} ${e.from} → ${e.to} workers</div><div class="why">${e.reason}</div></div>
+      <time>${clock(e.timestamp)}</time></li>`).join('');
+}
+
+async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+async function tick() {
+  try {
+    const [m, h] = await Promise.all([getJSON('/api/metrics'), getJSON('/health')]);
+    push(m); tiles(m);
+    const ok = h.status === 'ok' && h.autoscaler === 'ok';
+    $('health-dot').className = 'dot ' + (ok ? 'ok' : 'warn');
+    $('health-text').textContent = ok ? `healthy · ${h.workers} workers` : `${h.status} · autoscaler ${h.autoscaler}`;
+  } catch {
+    $('health-dot').className = 'dot bad';
+    $('health-text').textContent = 'gateway unreachable';
+  }
+}
+
+async function slowTick() {
+  try {
+    const [w, e] = await Promise.all([getJSON('/api/workers'), getJSON('/api/events')]);
+    renderWorkers(w); renderEvents(e);
+  } catch {}
+}
+
+document.querySelectorAll('#strategy button').forEach(b => b.onclick = () =>
+  fetch('/api/strategy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy: b.dataset.s }) }).then(tick));
+$('spike').onclick = () => fetch('/api/demo/spike?rate=80&seconds=25', { method: 'POST' }).then(tick);
+
+tick(); slowTick();
+setInterval(tick, 1000);
+setInterval(slowTick, 2000);
+</script>
+</body>
+</html>
