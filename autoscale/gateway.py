@@ -100,7 +100,14 @@ async def health():
     except Exception:
         raise HTTPException(503, "Redis unavailable")
     workers = await balancer.workers()
-    return {"status": "ok" if workers else "degraded", "redis": "ok", "workers": len(workers)}
+    beat = await r.get("autoscaler:heartbeat")
+    autoscaler = "ok" if beat and time.time() - float(beat) < 10 else "down"
+    return {
+        "status": "ok" if workers else "degraded",
+        "redis": "ok",
+        "workers": len(workers),
+        "autoscaler": autoscaler,
+    }
 
 
 @app.post("/api/tasks", status_code=202)
@@ -112,6 +119,7 @@ async def submit_task(task: TaskIn):
     pipe.expire(f"task:{task_id}", 600)
     pipe.lpush(config.QUEUE_KEY, json.dumps(payload))
     await pipe.execute()
+    await metrics.record(r, "enqueue")
     return {"id": task_id, "status": "queued"}
 
 
