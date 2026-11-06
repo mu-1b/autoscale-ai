@@ -1,0 +1,60 @@
+x-app: &app
+  build: .
+  image: autoscale-ai:latest
+  restart: unless-stopped
+  environment:
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    BALANCER_STRATEGY: ${BALANCER_STRATEGY:-round_robin}
+    RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-1200}
+    WORKER_PORT: ${WORKER_PORT:-8001}
+    MIN_SIM_WORKERS: ${MIN_SIM_WORKERS:-2}
+    MAX_SIM_WORKERS: ${MAX_SIM_WORKERS:-20}
+    SIM_WORKER_CAPACITY: ${SIM_WORKER_CAPACITY:-5}
+    AUTOSCALE_INTERVAL: ${AUTOSCALE_INTERVAL:-2}
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  gateway:
+    <<: *app
+    command: uvicorn autoscale.gateway:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  worker:
+    <<: *app
+    command: sh -c "uvicorn autoscale.worker:app --host 0.0.0.0 --port $${WORKER_PORT}"
+    deploy:
+      replicas: ${WORKER_REPLICAS:-3}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://localhost:{os.environ['WORKER_PORT']}/health\")"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  autoscaler:
+    <<: *app
+    command: python -m autoscale.autoscaler
+
+  loadgen:
+    <<: *app
+    command: python -m autoscale.loadgen --url http://gateway:8000 --loop
+    restart: "no"
+    profiles: ["loadgen"]
+    depends_on:
+      - gateway
